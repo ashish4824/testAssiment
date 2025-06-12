@@ -31,6 +31,8 @@ function App() {
   const [decals, setDecals] = useState([]);
   const [activeDecal, setActiveDecal] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isColorPickerActive, setIsColorPickerActive] = useState(false);
+  const [customColor, setCustomColor] = useState(null);
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -67,88 +69,101 @@ function App() {
   }, [selectedColor, decals]);
 
   // Draw car with current configuration
-  // Add a useCallback to memoize the drawCar function
+  // import { useCallback } from 'react';
+
+  // Utility: Convert hex color to RGB
+  function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+      r: parseInt(result[1], 16),
+      g: parseInt(result[2], 16),
+      b: parseInt(result[3], 16)
+    } : null;
+  }
+  
   const drawCar = useCallback(() => {
     if (!canvasRef.current) {
       console.error('Canvas reference is null');
       return;
     }
-
+  
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    
+  
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Load and draw the car image
+  
     const carImage = new Image();
-    carImage.crossOrigin = 'anonymous'; // Add this to handle CORS issues
+    carImage.crossOrigin = 'anonymous';
     carImage.src = selectedCar.image;
-    
-    console.log('Loading car image:', selectedCar.image);
-    
+  
     carImage.onload = () => {
-      console.log('Car image loaded successfully');
-      // Calculate aspect ratio to fit the image within the canvas
       const aspectRatio = carImage.width / carImage.height;
       let drawWidth = canvas.width;
       let drawHeight = drawWidth / aspectRatio;
-      
-      // If the height exceeds the canvas, scale down
+  
       if (drawHeight > canvas.height) {
         drawHeight = canvas.height;
         drawWidth = drawHeight * aspectRatio;
       }
-      
-      // Center the image on the canvas
+  
       const x = (canvas.width - drawWidth) / 2;
       const y = (canvas.height - drawHeight) / 2;
-      
-      // Draw the base car image
+  
       ctx.drawImage(carImage, x, y, drawWidth, drawHeight);
-      
-      // Apply color overlay if a color is selected
+  
       if (selectedColor && selectedColor !== 'none') {
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = selectedColor.value;
-        ctx.fillRect(x, y, drawWidth, drawHeight);
-        ctx.globalCompositeOperation = 'source-over';
+        // Get image data for manual processing
+        const imageData = ctx.getImageData(x, y, drawWidth, drawHeight);
+        const data = imageData.data;
+        const color = hexToRgb(selectedColor.value);
+  
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+  
+          // Skip pixels that are nearly white
+          if (!(r > 240 && g > 240 && b > 240)) {
+            data[i] = (r * color.r) / 255;
+            data[i + 1] = (g * color.g) / 255;
+            data[i + 2] = (b * color.b) / 255;
+          }
+        }
+  
+        // Apply updated image
+        ctx.putImageData(imageData, x, y);
       }
-      
+  
       // Draw decals
       decals.forEach(decal => {
         if (!decal.position) return;
-        
+  
         const decalImg = new Image();
-        decalImg.crossOrigin = 'anonymous'; // Add this to handle CORS issues
+        decalImg.crossOrigin = 'anonymous';
         decalImg.src = decal.image;
-        
-        console.log('Loading decal image:', decal.image);
-        
+  
         decalImg.onload = () => {
-          console.log('Decal image loaded successfully:', decal.name);
-          // Scale decal to a reasonable size (e.g., 20% of car width)
           const decalWidth = drawWidth * 0.2;
           const decalHeight = (decalWidth / decalImg.width) * decalImg.height;
-          
-          // Position decal based on user placement
+  
           const decalX = x + (decal.position.x / 100) * drawWidth - decalWidth / 2;
           const decalY = y + (decal.position.y / 100) * drawHeight - decalHeight / 2;
-          
+  
           ctx.drawImage(decalImg, decalX, decalY, decalWidth, decalHeight);
         };
-        
+  
         decalImg.onerror = (error) => {
           console.error(`Error loading decal image ${decal.name}:`, error);
         };
       });
     };
-    
+  
     carImage.onerror = (error) => {
       console.error('Error loading car image:', error);
     };
   }, [selectedCar, selectedColor, decals]);
-
+  
   // Handle car model change
   const handleCarChange = (car) => {
     setSelectedCar(car);
@@ -174,11 +189,38 @@ function App() {
 
   // Handle canvas click
   const handleCanvasClick = (e) => {
-    if (!activeDecal) return;
-    
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    
+    // If color picker is active, pick the color
+    if (isColorPickerActive) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      
+      // Get pixel color data at the clicked position
+      const pixelData = ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+      
+      // Convert RGB to hex
+      const hexColor = `#${pixelData[0].toString(16).padStart(2, '0')}${pixelData[1].toString(16).padStart(2, '0')}${pixelData[2].toString(16).padStart(2, '0')}`;
+      
+      // Create a custom color object
+      const pickedColor = {
+        name: 'Custom Color',
+        value: hexColor
+      };
+      
+      // Set the custom color
+      setCustomColor(pickedColor);
+      setSelectedColor(pickedColor);
+      
+      // Deactivate the color picker
+      setIsColorPickerActive(false);
+      return;
+    }
+    
+    // Otherwise handle decal placement
+    if (!activeDecal) return;
     
     // Update decal position using the position object with percentage values
     setDecals(decals.map(decal => 
@@ -308,20 +350,53 @@ function App() {
 
           {/* Color Selection */}
           <div className="mb-6">
-            <h3 className="font-medium mb-2">Select Color</h3>
+            <h3 className="font-medium mb-2">Select Car Color</h3>
+            <div className="flex items-center mb-2">
+              <button
+                className={`mr-2 p-2 rounded ${isColorPickerActive ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                onClick={() => setIsColorPickerActive(!isColorPickerActive)}
+                title="Color Picker Tool"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.94 2.94a.75.75 0 0 1 1.06 0l10.5 10.5a.75.75 0 1 1-1.06 1.06l-10.5-10.5a.75.75 0 0 1 0-1.06z" clipRule="evenodd" />
+                  <path d="M4.5 13.28a.75.75 0 0 0-1.5 0v2.97a.75.75 0 0 0 1.5 0v-2.97z" />
+                  <path fillRule="evenodd" d="M5.25 15a.75.75 0 0 1 .75-.75h8a.75.75 0 0 1 0 1.5H6a.75.75 0 0 1-.75-.75z" clipRule="evenodd" />
+                </svg>
+              </button>
+              {isColorPickerActive && (
+                <div className="text-sm text-blue-600 ml-2">
+                  Click on the car to pick a color
+                </div>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
               {COLORS.map((color) => (
                 <button
                   key={color.name}
                   className={`w-8 h-8 rounded-full border-2 ${
-                    selectedColor === color.value ? 'border-blue-500' : 'border-gray-200'
+                    selectedColor?.value === color.value ? 'border-blue-500' : 'border-gray-200'
                   }`}
                   style={{ backgroundColor: color.value }}
-                  onClick={() => handleColorSelect(color.value)}
+                  onClick={() => handleColorSelect(color)}
                   title={color.name}
                 />
               ))}
             </div>
+            
+            {/* Custom Color Display */}
+            {customColor && (
+              <div className="mt-3">
+                <h4 className="text-sm font-medium mb-1">Custom Color</h4>
+                <div className="flex items-center">
+                  <div 
+                    className={`w-8 h-8 rounded-full border-2 ${selectedColor?.value === customColor.value ? 'border-blue-500' : 'border-gray-200'}`} 
+                    style={{ backgroundColor: customColor.value }}
+                    onClick={() => setSelectedColor(customColor)}
+                  ></div>
+                  <span className="text-sm ml-2">{customColor.value}</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Decal Selection */}
