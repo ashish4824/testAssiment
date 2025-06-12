@@ -3,9 +3,9 @@ import './App.css';
 
 // Car models data
 const CAR_MODELS = [
-  { id: 1, name: 'Peugeot Partner L2 White', image: '/photo_5992130465353549853_w.jpg' },
-  { id: 2, name: 'Peugeot Partner L2 Blue', image: '/photo_5992130465353549852_w.jpg' },
-  { id: 3, name: 'Peugeot Partner L2 Red', image: '/photo_5992130465353549851_w.jpg' },
+  { id: 1, name: 'Peugeot Partner L2 White', image: '/photo_5992130465353549853_w.png' },
+  { id: 2, name: 'Peugeot Partner L2 Blue', image: '/photo_5992130465353549852_w.png' },
+  { id: 3, name: 'Peugeot Partner L2 Red', image: '/photo_5992130465353549851_w.png' },
 ];
 
 // Color options
@@ -20,9 +20,9 @@ const COLORS = [
 
 // Decal options
 const DECALS = [
-  { id: 1, name: 'Racing Stripe', image: '/stripe1.svg', position: { x: 50, y: 50 } },
-  { id: 2, name: 'Logo', image: '/logo1.svg', position: { x: 50, y: 50 } },
-  { id: 3, name: 'Number', image: '/number1.svg', position: { x: 50, y: 50 } },
+  { id: 1, name: 'Racing Stripe', image: '/stripe1.svg', position: { x: 50, y: 50 }, size: 100, rotation: 0 },
+  { id: 2, name: 'Logo', image: '/logo1.svg', position: { x: 50, y: 50 }, size: 100, rotation: 0 },
+  { id: 3, name: 'Number', image: '/number1.svg', position: { x: 50, y: 50 }, size: 100, rotation: 0 },
 ];
 
 function App() {
@@ -144,13 +144,56 @@ function App() {
         decalImg.src = decal.image;
   
         decalImg.onload = () => {
-          const decalWidth = drawWidth * 0.2;
+          // Calculate size based on decal.size (percentage of default size)
+          const sizeMultiplier = decal.size / 100;
+          const decalWidth = drawWidth * 0.2 * sizeMultiplier;
           const decalHeight = (decalWidth / decalImg.width) * decalImg.height;
   
           const decalX = x + (decal.position.x / 100) * drawWidth - decalWidth / 2;
           const decalY = y + (decal.position.y / 100) * drawHeight - decalHeight / 2;
   
-          ctx.drawImage(decalImg, decalX, decalY, decalWidth, decalHeight);
+          // Save the current context state
+          ctx.save();
+          
+          // Move to the center of where the decal should be
+          ctx.translate(
+            decalX + decalWidth / 2,
+            decalY + decalHeight / 2
+          );
+          
+          // Rotate the context
+          ctx.rotate((decal.rotation * Math.PI) / 180);
+          
+          // Draw the decal centered at the origin (which is now at the decal's center)
+          ctx.drawImage(
+            decalImg, 
+            -decalWidth / 2, 
+            -decalHeight / 2, 
+            decalWidth, 
+            decalHeight
+          );
+          
+          // Restore the context to its original state
+          ctx.restore();
+          
+          // Highlight active decal with a border
+          if (decal.id === activeDecal) {
+            ctx.save();
+            ctx.translate(
+              decalX + decalWidth / 2,
+              decalY + decalHeight / 2
+            );
+            ctx.rotate((decal.rotation * Math.PI) / 180);
+            ctx.strokeStyle = '#2563eb'; // Blue border
+            ctx.lineWidth = 2;
+            ctx.strokeRect(
+              -decalWidth / 2, 
+              -decalHeight / 2, 
+              decalWidth, 
+              decalHeight
+            );
+            ctx.restore();
+          }
         };
   
         decalImg.onerror = (error) => {
@@ -181,7 +224,9 @@ function App() {
     const newDecal = {
       ...decal,
       id: Date.now(),
-      position: { x: 50, y: 50 } // Center of the canvas by default (percentage-based)
+      position: { x: 50, y: 50 }, // Center of the canvas by default (percentage-based)
+      size: 100, // Default size (percentage)
+      rotation: 0 // Default rotation (degrees)
     };
     setDecals([...decals, newDecal]);
     setActiveDecal(newDecal.id);
@@ -264,7 +309,9 @@ function App() {
       const newDecal = {
         ...decalTemplate,
         id: Date.now(), // Generate unique ID
-        position: { x: (x / rect.width) * 100, y: (y / rect.height) * 100 }
+        position: { x: (x / rect.width) * 100, y: (y / rect.height) * 100 },
+        size: 100, // Default size (percentage)
+        rotation: 0 // Default rotation (degrees)
       };
       
       // Add the new decal to the list
@@ -423,6 +470,65 @@ function App() {
 
           {/* Action Buttons */}
           <div className="flex flex-col gap-2">
+            {activeDecal && (
+              <div className="mb-4 p-3 border rounded bg-blue-50">
+                <h3 className="font-medium mb-2">Edit Selected Decal</h3>
+                
+                {/* Size Control */}
+                <div className="mb-3">
+                  <label className="block text-sm mb-1">Size</label>
+                  <div className="flex items-center">
+                    <input 
+                      type="range" 
+                      min="50" 
+                      max="200" 
+                      className="flex-1 mr-2"
+                      value={decals.find(d => d.id === activeDecal)?.size || 100}
+                      onChange={(e) => {
+                        const newSize = parseInt(e.target.value);
+                        setDecals(decals.map(decal => 
+                          decal.id === activeDecal ? { ...decal, size: newSize } : decal
+                        ));
+                      }}
+                    />
+                    <span className="text-sm w-8 text-right">
+                      {decals.find(d => d.id === activeDecal)?.size || 100}%
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Rotation Control */}
+                <div className="mb-3">
+                  <label className="block text-sm mb-1">Rotation</label>
+                  <div className="flex items-center">
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="360" 
+                      className="flex-1 mr-2"
+                      value={decals.find(d => d.id === activeDecal)?.rotation || 0}
+                      onChange={(e) => {
+                        const newRotation = parseInt(e.target.value);
+                        setDecals(decals.map(decal => 
+                          decal.id === activeDecal ? { ...decal, rotation: newRotation } : decal
+                        ));
+                      }}
+                    />
+                    <span className="text-sm w-8 text-right">
+                      {decals.find(d => d.id === activeDecal)?.rotation || 0}°
+                    </span>
+                  </div>
+                </div>
+                
+                <button
+                  className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition-colors w-full"
+                  onClick={removeActiveDecal}
+                >
+                  Remove Decal
+                </button>
+              </div>
+            )}
+            
             <button
               className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition-colors"
               onClick={saveConfiguration}
@@ -441,14 +547,6 @@ function App() {
             >
               Reset All
             </button>
-            {activeDecal && (
-              <button
-                className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition-colors"
-                onClick={removeActiveDecal}
-              >
-                Remove Selected Decal
-              </button>
-            )}
           </div>
         </div>
 
@@ -474,6 +572,7 @@ function App() {
           <div className="mt-4 text-sm text-gray-600">
             <p>Click on the canvas to place the selected decal.</p>
             <p>Drag and drop decals to reposition them.</p>
+            <p>Select a decal to adjust its size and rotation using the controls in the left panel.</p>
           </div>
         </div>
       </div>
