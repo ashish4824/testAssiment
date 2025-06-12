@@ -10,6 +10,7 @@ const CAR_MODELS = [
 
 // Color options
 const COLORS = [
+  { name: 'No Color', value: 'transparent' },
   { name: 'Red', value: '#FF0000' },
   { name: 'Blue', value: '#0000FF' },
   { name: 'Green', value: '#00FF00' },
@@ -28,9 +29,12 @@ const DECALS = [
 function App() {
   const [selectedCar, setSelectedCar] = useState(CAR_MODELS[0]);
   const [selectedColor, setSelectedColor] = useState(null);
+  const [colorIntensity, setColorIntensity] = useState(100); // 0-100%
   const [decals, setDecals] = useState([]);
   const [activeDecal, setActiveDecal] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isColorPickerActive, setIsColorPickerActive] = useState(false);
+  const [customColor, setCustomColor] = useState(null);
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -108,10 +112,14 @@ function App() {
       ctx.drawImage(carImage, x, y, drawWidth, drawHeight);
       
       // Apply color overlay if a color is selected
-      if (selectedColor && selectedColor !== 'none') {
+      if (selectedColor && selectedColor.value !== 'transparent') {
         ctx.globalCompositeOperation = 'multiply';
+        // Apply color with intensity
+        const intensity = colorIntensity / 100;
+        ctx.globalAlpha = intensity;
         ctx.fillStyle = selectedColor.value;
         ctx.fillRect(x, y, drawWidth, drawHeight);
+        ctx.globalAlpha = 1.0; // Reset alpha
         ctx.globalCompositeOperation = 'source-over';
       }
       
@@ -147,13 +155,14 @@ function App() {
     carImage.onerror = (error) => {
       console.error('Error loading car image:', error);
     };
-  }, [selectedCar, selectedColor, decals]);
+  }, [selectedCar, selectedColor, decals, colorIntensity]);
 
   // Handle car model change
   const handleCarChange = (car) => {
     setSelectedCar(car);
     setDecals([]);
     setSelectedColor(null);
+    setColorIntensity(100);
   };
 
   // Handle color selection
@@ -172,13 +181,57 @@ function App() {
     setActiveDecal(newDecal.id);
   };
 
+  // Handle color picker click
+  const handleColorPickerClick = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    
+    // Get pixel color data at the clicked position
+    const x = Math.floor(lastClickX);
+    const y = Math.floor(lastClickY);
+    
+    // Get pixel color data at the clicked position
+    const pixelData = ctx.getImageData(x, y, 1, 1).data;
+    
+    // Convert RGB to hex
+    const hexColor = `#${pixelData[0].toString(16).padStart(2, '0')}${pixelData[1].toString(16).padStart(2, '0')}${pixelData[2].toString(16).padStart(2, '0')}`;
+    
+    // Create a custom color object
+    const pickedColor = {
+      name: 'Custom Color',
+      value: hexColor
+    };
+    
+    // Set the custom color
+    setCustomColor(pickedColor);
+    setSelectedColor(pickedColor);
+    
+    // Deactivate the color picker
+    setIsColorPickerActive(false);
+  };
+  
+  // Track last click position
+  const [lastClickX, setLastClickX] = useState(0);
+  const [lastClickY, setLastClickY] = useState(0);
+  
   // Handle canvas click
   const handleCanvasClick = (e) => {
-    if (!activeDecal) return;
-    
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    
+    // Store the click position
+    setLastClickX(x);
+    setLastClickY(y);
+    
+    // If color picker is active, pick the color
+    if (isColorPickerActive) {
+      handleColorPickerClick();
+      return;
+    }
+    
+    // Otherwise handle decal placement
+    if (!activeDecal) return;
     
     // Update decal position using the position object with percentage values
     setDecals(decals.map(decal => 
@@ -246,6 +299,7 @@ function App() {
     const config = {
       car: selectedCar,
       color: selectedColor,
+      colorIntensity: colorIntensity,
       decals: decals,
       timestamp: new Date().toISOString()
     };
@@ -257,6 +311,7 @@ function App() {
   const resetConfiguration = () => {
     setSelectedCar(CAR_MODELS[0]);
     setSelectedColor(null);
+    setColorIntensity(100);
     setDecals([]);
     setActiveDecal(null);
   };
@@ -308,20 +363,102 @@ function App() {
 
           {/* Color Selection */}
           <div className="mb-6">
-            <h3 className="font-medium mb-2">Select Color</h3>
-            <div className="flex flex-wrap gap-2">
+            <h3 className="text-lg font-semibold mb-2">Select Color</h3>
+            <div className="flex items-center mb-2">
+              <button
+                className={`mr-2 p-2 rounded ${isColorPickerActive ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+                onClick={() => setIsColorPickerActive(!isColorPickerActive)}
+                title="Color Picker Tool"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.94 2.94a.75.75 0 0 1 1.06 0l10.5 10.5a.75.75 0 1 1-1.06 1.06l-10.5-10.5a.75.75 0 0 1 0-1.06z" clipRule="evenodd" />
+                  <path d="M4.5 13.28a.75.75 0 0 0-1.5 0v2.97a.75.75 0 0 0 1.5 0v-2.97z" />
+                  <path fillRule="evenodd" d="M5.25 15a.75.75 0 0 1 .75-.75h8a.75.75 0 0 1 0 1.5H6a.75.75 0 0 1-.75-.75z" clipRule="evenodd" />
+                </svg>
+              </button>
+              {isColorPickerActive && (
+                <div className="text-sm text-blue-600 ml-2">
+                  Click on the car to pick a color
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-4 gap-2">
               {COLORS.map((color) => (
                 <button
                   key={color.name}
-                  className={`w-8 h-8 rounded-full border-2 ${
-                    selectedColor === color.value ? 'border-blue-500' : 'border-gray-200'
+                  className={`p-2 border rounded flex flex-col items-center ${
+                    selectedColor && selectedColor.value === color.value ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-300' : 'border-gray-200 hover:border-blue-300'
                   }`}
-                  style={{ backgroundColor: color.value }}
-                  onClick={() => handleColorSelect(color.value)}
-                  title={color.name}
-                />
+                  onClick={() => handleColorSelect(color)}
+                >
+                  <div 
+                    className={`w-12 h-12 rounded-full border mb-1 ${
+                      color.value === 'transparent' ? 'bg-white relative overflow-hidden' : ''
+                    }`}
+                    style={{ backgroundColor: color.value !== 'transparent' ? color.value : undefined }}
+                  >
+                    {color.value === 'transparent' && (
+                      <>
+                        <div className="absolute inset-0 bg-gray-200 opacity-50" style={{ 
+                          backgroundImage: 'linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc), linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc)', 
+                          backgroundSize: '8px 8px',
+                          backgroundPosition: '0 0, 4px 4px'
+                        }}></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <span className="text-xs font-medium">{color.name}</span>
+                </button>
               ))}
             </div>
+            
+            {/* Custom Color Display */}
+            {customColor && (
+              <div className="mt-3">
+                <h4 className="text-sm font-medium mb-1">Custom Color</h4>
+                <div className="flex items-center">
+                  <div 
+                    className={`w-10 h-10 rounded-md mr-2 border border-gray-300 ${selectedColor?.value === customColor.value ? 'ring-2 ring-blue-500' : ''}`} 
+                    style={{ backgroundColor: customColor.value }}
+                    onClick={() => setSelectedColor(customColor)}
+                  ></div>
+                  <span className="text-sm">{customColor.value}</span>
+                </div>
+              </div>
+            )}
+            
+            {/* Color Intensity Slider - only show when a color is selected */}
+            {selectedColor && selectedColor.value !== 'transparent' && (
+              <div className="mt-4 p-3 bg-gray-50 rounded border">
+                <h4 className="text-sm font-medium mb-2">Adjust Color Intensity</h4>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-gray-500">Light</span>
+                  <label className="text-sm font-medium">{colorIntensity}%</label>
+                  <span className="text-xs text-gray-500">Intense</span>
+                </div>
+                <input
+                  id="intensity-slider"
+                  type="range"
+                  min="10"
+                  max="100"
+                  value={colorIntensity}
+                  onChange={(e) => setColorIntensity(parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div 
+                  className="mt-2 w-full h-6 rounded" 
+                  style={{ 
+                    backgroundColor: selectedColor.value,
+                    opacity: colorIntensity / 100
+                  }}
+                ></div>
+              </div>
+            )}
           </div>
 
           {/* Decal Selection */}
